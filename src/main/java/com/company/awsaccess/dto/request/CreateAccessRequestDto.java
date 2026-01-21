@@ -7,6 +7,7 @@ public class CreateAccessRequestDto {
     private String reason;
     private String services;
     private String resourceArns;
+    private Integer durationHours;
 
     public String getRequesterEmail() {
         return requesterEmail;
@@ -46,5 +47,13 @@ public class CreateAccessRequestDto {
 
     public void setResourceArns(String resourceArns) {
         this.resourceArns = resourceArns;
+    }
+
+    public Integer getDurationHours() {
+        return durationHours;
+    }
+
+    public void setDurationHours(Integer durationHours) {
+        this.durationHours = durationHours;
     }
 }
