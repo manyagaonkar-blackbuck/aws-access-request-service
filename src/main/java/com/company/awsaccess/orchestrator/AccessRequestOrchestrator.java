@@ -31,31 +31,30 @@ public class AccessRequestOrchestrator {
                 llmClient.interpret(request, correlationId);
 
         if (Boolean.TRUE.equals(response.getNeedFollowup())) {
-            // frontend must ask follow-up question
             return response;
         }
 
-        // LLM returned complete structured data → create access request
-        CreateAccessRequestDto dto = mapToCreateDto(response);
+        // 🔒 SAFETY VALIDATION — CONTRACT ENFORCEMENT
+        if (response.getRequesterEmail() == null ||
+            response.getAwsAccount() == null ||
+            response.getServices() == null ||
+            response.getResourceArns() == null ||
+            response.getDurationHours() == null) {
+
+            throw new IllegalStateException("LLM returned incomplete data");
+        }
+
+        CreateAccessRequestDto dto = new CreateAccessRequestDto();
+        dto.setRequesterEmail(response.getRequesterEmail());
+        dto.setAwsAccount(response.getAwsAccount());
+        dto.setReason(response.getReason());
+        dto.setServices(response.getServices().toString());
+        dto.setResourceArns(response.getResourceArns().toString());
+        dto.setDurationHours(response.getDurationHours());
 
         AccessRequest saved =
                 accessRequestService.createAccessRequest(dto);
 
         return saved;
-    }
-
-    private CreateAccessRequestDto mapToCreateDto(
-            LlmInterpretResponse llm) {
-
-        CreateAccessRequestDto dto = new CreateAccessRequestDto();
-
-        dto.setRequesterEmail(llm.getRequesterEmail());
-        dto.setAwsAccount(llm.getAwsAccount());
-        dto.setReason(llm.getReason());
-        dto.setServices(llm.getServices().toString());
-        dto.setResourceArns(llm.getResourceArns().toString());
-        dto.setDurationHours(llm.getDurationHours());
-
-        return dto;
     }
 }
