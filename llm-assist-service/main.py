@@ -2,13 +2,13 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
 
+
 app = FastAPI(title="LLM Assist Service", version="1.0.0")
 
 
 # -----------------------------
-# Request/Response Models
+# Request Models
 # -----------------------------
-
 class InterpretRequest(BaseModel):
     requestId: str
     requesterEmail: Optional[str] = None
@@ -19,14 +19,30 @@ class InterpretRequest(BaseModel):
     allowedActionGroups: Dict[str, List[str]]
 
 
+# -----------------------------
+# Response Models
+# -----------------------------
 class FollowupQuestion(BaseModel):
     field: str
     question: str
 
 
+class PartialData(BaseModel):
+    requesterEmail: Optional[str] = None
+    awsAccount: Optional[str] = None
+    reason: Optional[str] = None
+    durationHours: Optional[int] = None
+    services: Optional[List[str]] = None
+    resourceArns: Optional[List[str]] = None
+    actionGroups: Optional[List[str]] = None
+
+
 class InterpretResponse(BaseModel):
     needFollowup: bool
     followupQuestion: Optional[FollowupQuestion] = None
+    partialData: Optional[PartialData] = None
+
+    # only present when needFollowup=false (complete)
     requesterEmail: Optional[str] = None
     awsAccount: Optional[str] = None
     reason: Optional[str] = None
@@ -45,71 +61,113 @@ def health():
 
 
 # -----------------------------
-# Main Endpoint (MOCK Day-1)
+# Helper: check missing fields
 # -----------------------------
-@app.post("/api/v1/llm/interpret", response_model=InterpretResponse)
-def interpret(req: InterpretRequest):
-    # Day-1 mock logic (no real LLM yet)
+MANDATORY_FIELDS = [
+    "requesterEmail",
+    "awsAccount",
+    "reason",
+    "services",
+    "resourceArns",
+    "durationHours",
+]
 
-    # Example: If reason mentions S3, we assume service S3 is needed
-    services = []
-    action_groups = []
+
+def get_missing_fields(data: dict) -> List[str]:
+    missing = []
+    for field in MANDATORY_FIELDS:
+        value = data.get(field)
+
+        # treat empty list / None / empty string as missing
+        if value is None:
+            missing.append(field)
+        elif isinstance(value, str) and value.strip() == "":
+            missing.append(field)
+        elif isinstance(value, list) and len(value) == 0:
+            missing.append(field)
+
+    return missing
+
+
+# -----------------------------
+# Endpoint: Interpret (MOCK Day 1 but Contract-aligned)
+# -----------------------------
+@app.post("/api/v1/llm/interpret", response_model=InterpretResponse, response_model_exclude_none=True)
+def interpret(req: InterpretRequest):
+    """
+    Day-1 implementation:
+    - Contract-aligned JSON
+    - Mock mapping: if reason contains "S3", choose S3
+    - Ask follow-up until mandatory fields exist (backend will re-call resolve endpoint later)
+    """
+
+    # 1) Decide services/actionGroups (mock rules)
+    services: List[str] = []
+    action_groups: List[str] = []
 
     reason_lower = req.reason.lower()
 
-    if "s3" in reason_lower:
-        if "S3" in req.allowedServices:
-            services = ["S3"]
-            # choose action groups only from allowedActionGroups
-            possible = req.allowedActionGroups.get("S3", [])
-            if "UPLOAD_OBJECTS" in possible:
-                action_groups.append("UPLOAD_OBJECTS")
-            if "READ_OBJECTS" in possible:
-                action_groups.append("READ_OBJECTS")
+    if "s3" in reason_lower and "S3" in req.allowedServices:
+        services = ["S3"]
+        allowed_s3_groups = req.allowedActionGroups.get("S3", [])
 
-    # Mandatory fields check for completion
-    # requesterEmail, awsAccount, reason, services, resourceArns, durationHours
-    missing_fields = []
+        if "UPLOAD_OBJECTS" in allowed_s3_groups:
+            action_groups.append("UPLOAD_OBJECTS")
+        if "READ_OBJECTS" in allowed_s3_groups:
+            action_groups.append("READ_OBJECTS")
 
-    if not req.requesterEmail:
-        missing_fields.append("requesterEmail")
-    if not req.awsAccount:
-        missing_fields.append("awsAccount")
-    if not req.reason:
-        missing_fields.append("reason")
-    if not services:
-        missing_fields.append("services")
-    if not req.durationHours:
-        missing_fields.append("durationHours")
+    # 2) Build current structured data (resourceArns unknown on Day-1)
+    structured = {
+        "requesterEmail": req.requesterEmail,
+        "awsAccount": req.awsAccount,
+        "reason": req.reason,
+        "durationHours": req.durationHours,
+        "services": services,
+        "resourceArns": None,  # unknown until user answers follow-up
+        "actionGroups": action_groups,
+    }
 
-    # resourceArns is always unknown on Day-1 mock, so we ask for it
-    missing_fields.append("resourceArns")
+    # 3) Check missing mandatory fields
+    missing = get_missing_fields(structured)
 
-    # Ask ONE follow-up at a time (follow-up loop will happen in Day 2+)
-    if missing_fields:
+    # 4) If missing -> ask ONE follow-up question
+    if missing:
+        field = missing[0]
+
+        question_map = {
+            "requesterEmail": "Please provide your requester email.",
+            "awsAccount": "Please provide the AWS account ID.",
+            "services": "Please confirm which AWS service(s) you need access to.",
+            "resourceArns": "Please provide the AWS resource ARN(s) you need access to.",
+            "durationHours": "Please provide the access duration in hours.",
+            "reason": "Please provide the reason for access."
+        }
+
         return InterpretResponse(
             needFollowup=True,
             followupQuestion=FollowupQuestion(
-                field=missing_fields[0],
-                question=f"Please provide {missing_fields[0]}."
+                field=field,
+                question=question_map.get(field, f"Please provide {field}.")
             ),
-            requesterEmail=req.requesterEmail,
-            awsAccount=req.awsAccount,
-            reason=req.reason,
-            services=services,
-            durationHours=req.durationHours,
-            actionGroups=action_groups
+            partialData=PartialData(
+                requesterEmail=req.requesterEmail,
+                awsAccount=req.awsAccount,
+                reason=req.reason,
+                durationHours=req.durationHours,
+                services=services if services else None,
+                actionGroups=action_groups if action_groups else None,
+            )
         )
 
-    # If all mandatory fields exist (rare in mock), return complete
+    # 5) If complete -> return full payload
     return InterpretResponse(
         needFollowup=False,
         requesterEmail=req.requesterEmail,
         awsAccount=req.awsAccount,
         reason=req.reason,
+        durationHours=req.durationHours,
         services=services,
         resourceArns=["arn:aws:s3:::example-bucket/*"],
-        durationHours=req.durationHours,
         actionGroups=action_groups
     )
 
