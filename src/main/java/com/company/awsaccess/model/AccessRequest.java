@@ -89,6 +89,11 @@ public class AccessRequest {
         return status;
     }
 
+    // 🔥 THIS WAS MISSING
+    public void setStatus(RequestStatus status) {
+        this.status = status;
+    }
+
     public Integer getDurationHours() {
         return durationHours;
     }
