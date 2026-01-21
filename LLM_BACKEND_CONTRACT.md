@@ -1,30 +1,26 @@
-## LLM → Backend Contract
+## LLM → Backend Contract (Day-2 Locked)
 
-### Mode
-LLM will directly call backend REST APIs .
+LLM responsibilities:
+- Interpret user intent
+- Suggest services + action groups
+- Ask follow-up questions if mandatory fields missing
+- Return deterministic JSON only
 
-### Mandatory Fields (LLM MUST send all)
+LLM must NOT:
+- Auto-approve requests
+- Change request status
+- Call backend APIs
+
+Backend responsibilities:
+- Orchestrate LLM calls
+- Validate mandatory fields
+- Persist request only when complete
+- Enforce approval workflow
+
+Mandatory fields:
 - requesterEmail
 - awsAccount
 - reason
 - services
 - resourceArns
 - durationHours
-
-If any mandatory field is missing, LLM must ask follow-up questions
-and MUST NOT call backend.
-
-### LLM MUST NOT
-- Auto-approve requests
-- Bypass manager approval
-- Bypass devops approval
-- Directly modify request status
-- Write to database
-
-### Backend Responsibilities
-- Validate request payload
-- Create access request with status = CREATED
-- Enforce approval workflow:
-  CREATED → MANAGER_APPROVED → DEVOPS_APPROVED
-- Reject invalid state transitions
-- Act as final source of truth
