@@ -1,9 +1,25 @@
-from fastapi import FastAPI
+import json
+import os
+from typing import Dict, List, Optional, Any, Tuple
+
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from dotenv import load_dotenv
+from openai import OpenAI
 
 
-app = FastAPI(title="LLM Assist Service", version="1.0.0")
+# -----------------------------
+# Env + OpenAI Client
+# -----------------------------
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY missing. Add it in llm-assist-service/.env")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+app = FastAPI(title="LLM Assist Service", version="2.4.0")
 
 
 # -----------------------------
@@ -19,6 +35,20 @@ class InterpretRequest(BaseModel):
     allowedActionGroups: Dict[str, List[str]]
 
 
+class ResolveFollowupRequest(BaseModel):
+    requestId: str
+    followupAnswer: str
+    partialData: Dict[str, Any]
+    allowedServices: List[str]
+    allowedActionGroups: Dict[str, List[str]]
+
+
+class SuggestRequest(BaseModel):
+    reason: str
+    allowedServices: List[str]
+    allowedActionGroups: Dict[str, List[str]]
+
+
 # -----------------------------
 # Response Models
 # -----------------------------
@@ -27,25 +57,21 @@ class FollowupQuestion(BaseModel):
     question: str
 
 
-class PartialData(BaseModel):
-    requesterEmail: Optional[str] = None
-    awsAccount: Optional[str] = None
-    reason: Optional[str] = None
-    durationHours: Optional[int] = None
-    services: Optional[List[str]] = None
-    resourceArns: Optional[List[str]] = None
-    actionGroups: Optional[List[str]] = None
+class SuggestResponse(BaseModel):
+    services: List[str]
+    actionGroups: List[str]
+    suggestion: str
 
 
 class InterpretResponse(BaseModel):
     # Always present
     needFollowup: bool
 
-    # Present only when follow-up is required
+    # Present only in follow-up mode
     followupQuestion: Optional[FollowupQuestion] = None
-    partialData: Optional[PartialData] = None
+    partialData: Optional[Dict[str, Any]] = None
 
-    # Present only when request is complete
+    # Present only in complete mode
     requesterEmail: Optional[str] = None
     awsAccount: Optional[str] = None
     reason: Optional[str] = None
@@ -53,17 +79,6 @@ class InterpretResponse(BaseModel):
     resourceArns: Optional[List[str]] = None
     durationHours: Optional[int] = None
     actionGroups: Optional[List[str]] = None
-
-
-# -----------------------------
-# NEW: Resolve Follow-up Request Model (Day 2)
-# -----------------------------
-class ResolveFollowupRequest(BaseModel):
-    requestId: str
-    followupAnswer: str
-    partialData: PartialData
-    allowedServices: List[str]
-    allowedActionGroups: Dict[str, List[str]]
 
 
 # -----------------------------
@@ -87,7 +102,75 @@ MANDATORY_FIELDS = [
 ]
 
 
+def safe_json_parse(text: str) -> dict:
+    return json.loads(text.strip())
+
+
+def call_openai_json(system_prompt: str, user_prompt: str) -> dict:
+    """
+    Calls OpenAI and forces JSON output.
+    Retries once if invalid JSON.
+    """
+    model = "gpt-4o-mini"
+
+    def _call(extra_instruction: Optional[str] = None) -> str:
+        messages = [{"role": "system", "content": system_prompt}]
+        if extra_instruction:
+            messages.append({"role": "system", "content": extra_instruction})
+        messages.append({"role": "user", "content": user_prompt})
+
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2,
+        )
+        return resp.choices[0].message.content
+
+    raw = _call()
+    try:
+        return safe_json_parse(raw)
+    except Exception:
+        raw2 = _call(
+            "Your previous output was invalid JSON. Return ONLY valid JSON. No markdown, no explanation."
+        )
+        return safe_json_parse(raw2)
+
+
+def enforce_need_followup(out: dict) -> dict:
+    """
+    BULLETPROOF: FastAPI response model requires needFollowup ALWAYS.
+    If LLM forgets it, we set default needFollowup=false.
+    """
+    if "needFollowup" not in out:
+        out["needFollowup"] = False
+    return out
+
+
+def enforce_allowed_values(
+    services: List[str],
+    action_groups: List[str],
+    allowed_services: List[str],
+    allowed_action_groups: Dict[str, List[str]]
+) -> Tuple[List[str], List[str]]:
+    """
+    Ensure LLM output stays within allowed services and action groups.
+    """
+    services = [s for s in services if s in allowed_services]
+
+    allowed_all_groups = set()
+    for svc, groups in allowed_action_groups.items():
+        for g in groups:
+            allowed_all_groups.add(g)
+
+    action_groups = [g for g in action_groups if g in allowed_all_groups]
+    return services, action_groups
+
+
 def get_missing_fields(data: dict) -> List[str]:
+    """
+    Contract mandatory fields check.
+    Treat empty list / empty string as missing.
+    """
     missing = []
     for field in MANDATORY_FIELDS:
         value = data.get(field)
@@ -102,7 +185,7 @@ def get_missing_fields(data: dict) -> List[str]:
     return missing
 
 
-def build_followup_question(field: str) -> str:
+def make_followup(field: str, partial: Dict[str, Any]) -> dict:
     question_map = {
         "requesterEmail": "Please provide the requester email.",
         "awsAccount": "Please provide the AWS account ID.",
@@ -111,11 +194,76 @@ def build_followup_question(field: str) -> str:
         "resourceArns": "Please provide the AWS resource ARN(s) you need access to.",
         "durationHours": "Please provide the access duration in hours."
     }
-    return question_map.get(field, f"Please provide {field}.")
+
+    return {
+        "needFollowup": True,
+        "followupQuestion": {
+            "field": field,
+            "question": question_map.get(field, f"Please provide {field}.")
+        },
+        "partialData": partial
+    }
 
 
 # -----------------------------
-# Endpoint 1: Interpret (Contract-aligned mock)
+# Endpoint: Suggest (LLM)
+# -----------------------------
+@app.post(
+    "/api/v1/llm/suggest",
+    response_model=SuggestResponse,
+    response_model_exclude_none=True
+)
+def suggest(req: SuggestRequest):
+    system_prompt = """
+You are an AWS permission suggestion assistant.
+Return ONLY JSON. No markdown.
+
+Rules:
+- Suggest only minimal and safe permissions (never admin/full access).
+- Choose services ONLY from allowedServices.
+- Choose actionGroups ONLY from allowedActionGroups.
+
+Return format:
+{
+  "services": [...],
+  "actionGroups": [...],
+  "suggestion": "short sentence"
+}
+"""
+
+    user_prompt = f"""
+Reason:
+{req.reason}
+
+allowedServices:
+{req.allowedServices}
+
+allowedActionGroups:
+{req.allowedActionGroups}
+"""
+
+    try:
+        out = call_openai_json(system_prompt, user_prompt)
+
+        services = out.get("services", [])
+        action_groups = out.get("actionGroups", [])
+        suggestion_text = out.get("suggestion", "Suggested permissions based on the request reason.")
+
+        services, action_groups = enforce_allowed_values(
+            services, action_groups, req.allowedServices, req.allowedActionGroups
+        )
+
+        return SuggestResponse(
+            services=services,
+            actionGroups=action_groups,
+            suggestion=suggestion_text
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Suggest LLM error: {str(e)}")
+
+
+# -----------------------------
+# Endpoint: Interpret (LLM)
 # -----------------------------
 @app.post(
     "/api/v1/llm/interpret",
@@ -123,79 +271,97 @@ def build_followup_question(field: str) -> str:
     response_model_exclude_none=True
 )
 def interpret(req: InterpretRequest):
-    """
-    Day-1/Day-1.5 version:
-    - Still MOCK logic (no real LLM call)
-    - But response JSON is contract-aligned
-    - Only chooses from allowedServices + allowedActionGroups
-    - Asks follow-up until mandatory fields are satisfied
-    """
+    system_prompt = """
+You are an AWS Access Request Interpreter.
+Return ONLY JSON. No markdown.
 
-    # 1) Decide services/action groups (mock)
-    services: List[str] = []
-    action_groups: List[str] = []
+Mandatory fields for completion:
+- requesterEmail
+- awsAccount
+- reason
+- services
+- resourceArns
+- durationHours
 
-    reason_lower = req.reason.lower()
+Rules:
+- Infer services and actionGroups from the reason if possible.
+- Choose services ONLY from allowedServices.
+- Choose actionGroups ONLY from allowedActionGroups.
+- Ask ONE follow-up question at a time when mandatory data is missing.
 
-    # Example mapping: if reason mentions S3, suggest S3
-    if "s3" in reason_lower and "S3" in req.allowedServices:
-        services = ["S3"]
-        allowed_s3_groups = req.allowedActionGroups.get("S3", [])
+Follow-up format:
+{
+  "needFollowup": true,
+  "followupQuestion": { "field": "<missingField>", "question": "<question>" },
+  "partialData": { ... }
+}
 
-        if "UPLOAD_OBJECTS" in allowed_s3_groups:
-            action_groups.append("UPLOAD_OBJECTS")
-        if "READ_OBJECTS" in allowed_s3_groups:
-            action_groups.append("READ_OBJECTS")
+Complete format:
+{
+  "needFollowup": false,
+  "requesterEmail": "...",
+  "awsAccount": "...",
+  "reason": "...",
+  "services": [...],
+  "resourceArns": [...],
+  "durationHours": 24,
+  "actionGroups": [...]
+}
+"""
 
-    # 2) Build structured output (resourceArns unknown today)
-    structured = {
-        "requesterEmail": req.requesterEmail,
-        "awsAccount": req.awsAccount,
-        "reason": req.reason,
-        "durationHours": req.durationHours,
-        "services": services,
-        "resourceArns": None,  # unknown at interpret stage unless already provided
-        "actionGroups": action_groups,
-    }
+    user_prompt = f"""
+requestId: {req.requestId}
 
-    # 3) Validate mandatory fields
-    missing_fields = get_missing_fields(structured)
+requesterEmail: {req.requesterEmail}
+awsAccount: {req.awsAccount}
+reason: {req.reason}
+durationHours: {req.durationHours}
 
-    # 4) Follow-up mode
-    if missing_fields:
-        field = missing_fields[0]
+allowedServices:
+{req.allowedServices}
 
-        return InterpretResponse(
-            needFollowup=True,
-            followupQuestion=FollowupQuestion(
-                field=field,
-                question=build_followup_question(field)
-            ),
-            partialData=PartialData(
-                requesterEmail=req.requesterEmail,
-                awsAccount=req.awsAccount,
-                reason=req.reason,
-                durationHours=req.durationHours,
-                services=services if services else None,
-                actionGroups=action_groups if action_groups else None
+allowedActionGroups:
+{req.allowedActionGroups}
+"""
+
+    try:
+        out = call_openai_json(system_prompt, user_prompt)
+        out = enforce_need_followup(out)
+
+        if out.get("needFollowup") is False:
+            services = out.get("services", [])
+            action_groups = out.get("actionGroups", [])
+
+            services, action_groups = enforce_allowed_values(
+                services, action_groups, req.allowedServices, req.allowedActionGroups
             )
-        )
+            out["services"] = services
+            out["actionGroups"] = action_groups
 
-    # 5) Complete mode (only if everything present)
-    return InterpretResponse(
-        needFollowup=False,
-        requesterEmail=req.requesterEmail,
-        awsAccount=req.awsAccount,
-        reason=req.reason,
-        services=services,
-        resourceArns=["arn:aws:s3:::example-bucket/*"],  # mock placeholder
-        durationHours=req.durationHours,
-        actionGroups=action_groups
-    )
+            missing = get_missing_fields(out)
+            if missing:
+                field = missing[0]
+                partial = {
+                    "requesterEmail": req.requesterEmail,
+                    "awsAccount": req.awsAccount,
+                    "reason": req.reason,
+                    "durationHours": req.durationHours,
+                    "services": out.get("services", []),
+                    "actionGroups": out.get("actionGroups", []),
+                    "resourceArns": out.get("resourceArns", None),
+                }
+                return make_followup(field, partial)
+
+        # FINAL GUARANTEE
+        out = enforce_need_followup(out)
+        return out
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Interpret LLM error: {str(e)}")
 
 
 # -----------------------------
-# Endpoint 2: Resolve Follow-up (Day 2)
+# Endpoint: Resolve Follow-up (LLM)
 # -----------------------------
 @app.post(
     "/api/v1/llm/resolve-followup",
@@ -203,80 +369,74 @@ def interpret(req: InterpretRequest):
     response_model_exclude_none=True
 )
 def resolve_followup(req: ResolveFollowupRequest):
-    """
-    Day-2 version:
-    - Backend sends followupAnswer + partialData
-    - We fill missing fields based on answer (still MOCK parsing)
-    - If still missing mandatory fields -> ask next follow-up
-    - Else -> return complete payload
-    """
+    system_prompt = """
+You are an AWS Access Request Follow-up Resolver.
+Return ONLY JSON. No markdown.
 
-    # Start from partialData already collected
-    updated = {
-        "requesterEmail": req.partialData.requesterEmail,
-        "awsAccount": req.partialData.awsAccount,
-        "reason": req.partialData.reason,
-        "durationHours": req.partialData.durationHours,
-        "services": req.partialData.services or [],
-        "resourceArns": req.partialData.resourceArns,
-        "actionGroups": req.partialData.actionGroups or [],
-    }
+You will receive:
+- partialData (already known values)
+- followupAnswer (new user answer)
 
-    answer = req.followupAnswer.strip()
+Task:
+- merge followupAnswer into partialData
+- if still missing mandatory fields, ask NEXT follow-up question (one at a time)
+- else return complete JSON
 
-    # -----------------------------
-    # MOCK parsing rules (temporary)
-    # -----------------------------
-    # If answer contains ARN -> assume it is resourceArns
-    if "arn:" in answer.lower():
-        updated["resourceArns"] = [answer]
+Mandatory fields:
+- requesterEmail
+- awsAccount
+- reason
+- services
+- resourceArns
+- durationHours
 
-    # If answer is numeric -> assume it is durationHours
-    if answer.isdigit():
-        updated["durationHours"] = int(answer)
+Output format same as /interpret.
+"""
 
-    # If user typed a service name in answer (very basic)
-    # Example: "S3" -> set services=["S3"] if allowed
-    if answer.upper() in req.allowedServices:
-        updated["services"] = [answer.upper()]
+    user_prompt = f"""
+requestId: {req.requestId}
 
-        # if we set service, choose at least one allowed action group (example)
-        groups = req.allowedActionGroups.get(answer.upper(), [])
-        if groups and not updated["actionGroups"]:
-            updated["actionGroups"] = [groups[0]]
+partialData:
+{req.partialData}
 
-    # Check mandatory fields again
-    missing_fields = get_missing_fields(updated)
+followupAnswer:
+{req.followupAnswer}
 
-    if missing_fields:
-        field = missing_fields[0]
+allowedServices:
+{req.allowedServices}
 
-        return InterpretResponse(
-            needFollowup=True,
-            followupQuestion=FollowupQuestion(
-                field=field,
-                question=build_followup_question(field)
-            ),
-            partialData=PartialData(
-                requesterEmail=updated["requesterEmail"],
-                awsAccount=updated["awsAccount"],
-                reason=updated["reason"],
-                durationHours=updated["durationHours"],
-                services=updated["services"] if updated["services"] else None,
-                resourceArns=updated["resourceArns"],
-                actionGroups=updated["actionGroups"] if updated["actionGroups"] else None,
+allowedActionGroups:
+{req.allowedActionGroups}
+"""
+
+    try:
+        out = call_openai_json(system_prompt, user_prompt)
+        out = enforce_need_followup(out)
+
+        if out.get("needFollowup") is False:
+            services = out.get("services", [])
+            action_groups = out.get("actionGroups", [])
+
+            services, action_groups = enforce_allowed_values(
+                services, action_groups, req.allowedServices, req.allowedActionGroups
             )
-        )
+            out["services"] = services
+            out["actionGroups"] = action_groups
 
-    # Return complete response
-    return InterpretResponse(
-        needFollowup=False,
-        requesterEmail=updated["requesterEmail"],
-        awsAccount=updated["awsAccount"],
-        reason=updated["reason"],
-        services=updated["services"],
-        resourceArns=updated["resourceArns"],
-        durationHours=updated["durationHours"],
-        actionGroups=updated["actionGroups"]
-    )
+            missing = get_missing_fields(out)
+            if missing:
+                field = missing[0]
+                partial = req.partialData.copy()
+                partial["services"] = out.get("services", partial.get("services", []))
+                partial["actionGroups"] = out.get("actionGroups", partial.get("actionGroups", []))
+                partial["resourceArns"] = out.get("resourceArns", partial.get("resourceArns", None))
+                partial["durationHours"] = out.get("durationHours", partial.get("durationHours", None))
+                return make_followup(field, partial)
+
+        # FINAL GUARANTEE
+        out = enforce_need_followup(out)
+        return out
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resolve-followup LLM error: {str(e)}")
 
