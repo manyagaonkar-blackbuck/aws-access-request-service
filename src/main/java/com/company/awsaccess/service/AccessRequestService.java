@@ -15,19 +15,13 @@ public class AccessRequestService {
     }
 
     public AccessRequest createAccessRequest(AccessRequest request) {
+        request.setStatus(AccessRequestStatus.CREATED);
         return repository.save(request);
     }
 
     public AccessRequest getById(Long id) {
-        AccessRequest request =
-                repository.findById(id)
-                        .orElseThrow(() -> new IllegalArgumentException("Request not found"));
-
-        if (request.isExpired()) {
-            request.setStatus(AccessRequestStatus.EXPIRED);
-            repository.save(request);
-        }
-        return request;
+        return repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Request not found"));
     }
 
     public AccessRequest approveByManager(Long id) {
