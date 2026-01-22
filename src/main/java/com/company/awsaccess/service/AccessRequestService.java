@@ -5,6 +5,8 @@ import com.company.awsaccess.model.AccessRequestStatus;
 import com.company.awsaccess.repository.AccessRequestRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 @Service
 public class AccessRequestService {
 
@@ -15,13 +17,12 @@ public class AccessRequestService {
     }
 
     public AccessRequest createAccessRequest(AccessRequest request) {
-        request.setStatus(AccessRequestStatus.CREATED);
         return repository.save(request);
     }
 
     public AccessRequest getById(Long id) {
         return repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Request not found"));
+                .orElseThrow(() -> new IllegalStateException("Request not found"));
     }
 
     public AccessRequest approveByManager(Long id) {
@@ -32,16 +33,14 @@ public class AccessRequestService {
         }
 
         request.setStatus(AccessRequestStatus.MANAGER_APPROVED);
+        request.setApprovedByManager("manager@company.com");
+        request.setApprovedAtManager(LocalDateTime.now());
+
         return repository.save(request);
     }
 
     public AccessRequest rejectByManager(Long id) {
         AccessRequest request = getById(id);
-
-        if (request.getStatus() != AccessRequestStatus.CREATED) {
-            throw new IllegalStateException("Manager rejection not allowed");
-        }
-
         request.setStatus(AccessRequestStatus.MANAGER_REJECTED);
         return repository.save(request);
     }
@@ -54,16 +53,14 @@ public class AccessRequestService {
         }
 
         request.setStatus(AccessRequestStatus.DEVOPS_APPROVED);
+        request.setApprovedByDevOps("devops@company.com");
+        request.setApprovedAtDevOps(LocalDateTime.now());
+
         return repository.save(request);
     }
 
     public AccessRequest rejectByDevOps(Long id) {
         AccessRequest request = getById(id);
-
-        if (request.getStatus() != AccessRequestStatus.MANAGER_APPROVED) {
-            throw new IllegalStateException("DevOps rejection not allowed");
-        }
-
         request.setStatus(AccessRequestStatus.DEVOPS_REJECTED);
         return repository.save(request);
     }
