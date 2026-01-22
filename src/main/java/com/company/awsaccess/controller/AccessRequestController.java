@@ -5,6 +5,7 @@ import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
 import com.company.awsaccess.service.AccessRequestService;
 import com.company.awsaccess.service.AwsCliCommandService;
+import com.company.awsaccess.service.IamPolicyService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -14,12 +15,16 @@ import java.util.Map;
 public class AccessRequestController {
 
     private final AccessRequestService service;
+    private final IamPolicyService iamPolicyService;
     private final AwsCliCommandService awsCliCommandService;
 
     public AccessRequestController(
             AccessRequestService service,
+            IamPolicyService iamPolicyService,
             AwsCliCommandService awsCliCommandService) {
+
         this.service = service;
+        this.iamPolicyService = iamPolicyService;
         this.awsCliCommandService = awsCliCommandService;
     }
 
@@ -27,12 +32,12 @@ public class AccessRequestController {
     public AccessRequestResponseDto create(
             @RequestBody CreateAccessRequestDto dto) {
 
-        AccessRequest request = service.createAccessRequest(dto);
-        return toResponse(request);
+        AccessRequest saved = service.createAccessRequest(dto);
+        return toResponse(saved);
     }
 
     @GetMapping("/{id}")
-    public AccessRequestResponseDto getById(@PathVariable Long id) {
+    public AccessRequestResponseDto get(@PathVariable Long id) {
         return toResponse(service.getById(id));
     }
 
@@ -56,11 +61,17 @@ public class AccessRequestController {
         return toResponse(service.rejectByDevOps(id));
     }
 
+    @GetMapping("/{id}/iam-policy.json")
+    public Map<String, Object> getIamPolicy(@PathVariable Long id) {
+
+        AccessRequest request = service.getById(id);
+        return iamPolicyService.generatePolicy(request);
+    }
+
     @GetMapping("/{id}/aws-cli")
     public Map<String, String> getAwsCli(@PathVariable Long id) {
 
         AccessRequest request = service.getById(id);
-
         String command =
                 awsCliCommandService.generateCreatePolicyCommand(request);
 
