@@ -4,42 +4,25 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "access_requests")
 public class AccessRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private String requesterEmail;
-
-    @Column(nullable = false)
     private String awsAccount;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
     private String reason;
-
-    @Column(columnDefinition = "TEXT")
     private String services;
-
-    @Column(columnDefinition = "TEXT")
     private String resourceArns;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private RequestStatus status;
-
     private Integer durationHours;
 
-    private LocalDateTime createdAt;
+    @Enumerated(EnumType.STRING)
+    private RequestStatus status = RequestStatus.CREATED;
 
-    @PrePersist
-    public void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.durationHours = 24;
-        this.status = RequestStatus.CREATED;
-    }
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    // ---------- GETTERS / SETTERS ----------
 
     public Long getId() {
         return id;
@@ -85,20 +68,30 @@ public class AccessRequest {
         this.resourceArns = resourceArns;
     }
 
-    public RequestStatus getStatus() {
-        return status;
-    }
-
-    // 🔥 THIS WAS MISSING
-    public void setStatus(RequestStatus status) {
-        this.status = status;
-    }
-
     public Integer getDurationHours() {
         return durationHours;
     }
 
+    public void setDurationHours(Integer durationHours) {
+        this.durationHours = durationHours;
+    }
+
+    public RequestStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(RequestStatus status) {
+        this.status = status;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    // ---------- DOMAIN LOGIC ----------
+
+    public boolean isExpired() {
+        if (durationHours == null) return false;
+        return createdAt.plusHours(durationHours).isBefore(LocalDateTime.now());
     }
 }

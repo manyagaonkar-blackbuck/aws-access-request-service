@@ -12,26 +12,26 @@ public class IamPolicyService {
     public Map<String, Object> generatePolicy(AccessRequest request) {
 
         if (request.getStatus() != RequestStatus.DEVOPS_APPROVED) {
-            throw new IllegalStateException(
-                    "IAM policy can be generated only after DevOps approval"
-            );
+            throw new IllegalStateException("IAM policy available only after DevOps approval");
         }
 
-        Map<String, Object> policy = new LinkedHashMap<>();
+        if (request.isExpired()) {
+            throw new IllegalStateException("Access request has expired");
+        }
+
+        Map<String, Object> policy = new HashMap<>();
         policy.put("Version", "2012-10-17");
 
-        Map<String, Object> statement = new LinkedHashMap<>();
+        Map<String, Object> statement = new HashMap<>();
         statement.put("Effect", "Allow");
         statement.put("Action", mapActions(request.getServices()));
         statement.put("Resource", parseResources(request.getResourceArns()));
 
         policy.put("Statement", List.of(statement));
-
         return policy;
     }
 
     private List<String> mapActions(String services) {
-
         List<String> actions = new ArrayList<>();
 
         if (services.contains("S3")) {
@@ -50,7 +50,6 @@ public class IamPolicyService {
     }
 
     private List<String> parseResources(String resourceArns) {
-
         return Arrays.asList(
                 resourceArns.replace("[", "")
                         .replace("]", "")

@@ -4,9 +4,7 @@ import com.company.awsaccess.dto.request.CreateAccessRequestDto;
 import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
 import com.company.awsaccess.service.*;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -33,15 +31,18 @@ public class AccessRequestController {
     }
 
     @PostMapping
-    public AccessRequestResponseDto create(
-            @RequestBody CreateAccessRequestDto dto) {
-
+    public AccessRequestResponseDto create(@RequestBody CreateAccessRequestDto dto) {
         return toResponse(service.createAccessRequest(dto));
     }
 
     @GetMapping("/{id}")
     public AccessRequestResponseDto get(@PathVariable Long id) {
         return toResponse(service.getById(id));
+    }
+
+    @GetMapping("/{id}/status")
+    public Map<String, String> getStatus(@PathVariable Long id) {
+        return Map.of("status", service.getById(id).getStatus().name());
     }
 
     @PostMapping("/{id}/manager/approve")
@@ -54,19 +55,11 @@ public class AccessRequestController {
         return toResponse(service.approveByDevOps(id));
     }
 
-    @GetMapping("/{id}/iam-policy.json")
-    public Map<String, Object> getIamPolicy(@PathVariable Long id) {
-
-        AccessRequest request = service.getById(id);
-        return iamPolicyService.generatePolicy(request);
-    }
-
     @GetMapping("/{id}/iam-policy/download")
     public ResponseEntity<String> downloadIamPolicy(@PathVariable Long id) {
 
         AccessRequest request = service.getById(id);
-        String json =
-                iamPolicyExportService.generatePolicyJson(request);
+        String json = iamPolicyExportService.generatePolicyJson(request);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
