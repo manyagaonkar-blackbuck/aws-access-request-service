@@ -22,17 +22,18 @@ public class IamPolicyService {
         Map<String, Object> policy = new HashMap<>();
         policy.put("Version", "2012-10-17");
 
-        Map<String, Object> stmt = new HashMap<>();
-        stmt.put("Effect", "Allow");
-        stmt.put("Action", mapActions(request.getServices()));
-        stmt.put("Resource", parseResources(request.getResourceArns()));
+        Map<String, Object> statement = new HashMap<>();
+        statement.put("Effect", "Allow");
+        statement.put("Action", mapActions(request.getServices()));
+        statement.put("Resource", parseResources(request.getResourceArns()));
 
-        policy.put("Statement", List.of(stmt));
+        policy.put("Statement", List.of(statement));
         return policy;
     }
 
     private List<String> mapActions(String services) {
         List<String> actions = new ArrayList<>();
+
         if (services.contains("S3")) {
             actions.add("s3:PutObject");
             actions.add("s3:GetObject");
@@ -43,9 +44,9 @@ public class IamPolicyService {
 
     private List<String> parseResources(String resourceArns) {
         return Arrays.asList(
-                resourceArns.replace("[","")
-                        .replace("]","")
-                        .replace("\"","")
+                resourceArns.replace("[", "")
+                        .replace("]", "")
+                        .replace("\"", "")
                         .split(",")
         );
     }

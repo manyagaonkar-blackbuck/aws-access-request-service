@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
+@Table(name = "access_requests")
 public class AccessRequest {
 
     @Id
@@ -26,18 +27,25 @@ public class AccessRequest {
     private AccessRequestStatus status;
 
     private LocalDateTime createdAt;
+    private LocalDateTime expiresAt;
 
     @PrePersist
-    public void init() {
+    public void onCreate() {
         this.createdAt = LocalDateTime.now();
-        this.status = AccessRequestStatus.CREATED;
+        if (this.durationHours != null) {
+            this.expiresAt = this.createdAt.plusHours(this.durationHours);
+        }
+        if (this.status == null) {
+            this.status = AccessRequestStatus.CREATED;
+        }
     }
 
     public boolean isExpired() {
-        return createdAt.plusHours(durationHours).isBefore(LocalDateTime.now());
+        return expiresAt != null && LocalDateTime.now().isAfter(expiresAt);
     }
 
     // getters & setters
+
     public Long getId() { return id; }
     public String getRequesterEmail() { return requesterEmail; }
     public void setRequesterEmail(String requesterEmail) { this.requesterEmail = requesterEmail; }
@@ -54,4 +62,5 @@ public class AccessRequest {
     public AccessRequestStatus getStatus() { return status; }
     public void setStatus(AccessRequestStatus status) { this.status = status; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getExpiresAt() { return expiresAt; }
 }
