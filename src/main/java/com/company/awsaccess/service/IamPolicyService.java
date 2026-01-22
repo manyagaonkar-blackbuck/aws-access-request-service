@@ -33,7 +33,6 @@ public class IamPolicyService {
 
     private List<String> mapActions(String services) {
         List<String> actions = new ArrayList<>();
-
         if (services.contains("S3")) {
             actions.add("s3:PutObject");
             actions.add("s3:GetObject");
@@ -44,9 +43,9 @@ public class IamPolicyService {
 
     private List<String> parseResources(String resourceArns) {
         return Arrays.asList(
-                resourceArns.replace("[", "")
-                        .replace("]", "")
-                        .replace("\"", "")
+                resourceArns.replace("[","")
+                        .replace("]","")
+                        .replace("\"","")
                         .split(",")
         );
     }

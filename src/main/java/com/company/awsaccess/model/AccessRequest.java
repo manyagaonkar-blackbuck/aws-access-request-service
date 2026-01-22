@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "access_requests")
 public class AccessRequest {
 
     @Id
@@ -14,13 +13,8 @@ public class AccessRequest {
     private String requesterEmail;
     private String awsAccount;
     private String reason;
-
-    @Column(columnDefinition = "TEXT")
     private String services;
-
-    @Column(columnDefinition = "TEXT")
     private String resourceArns;
-
     private Integer durationHours;
 
     @Enumerated(EnumType.STRING)
@@ -32,19 +26,15 @@ public class AccessRequest {
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
-        if (this.durationHours != null) {
-            this.expiresAt = this.createdAt.plusHours(this.durationHours);
+        if (durationHours != null) {
+            this.expiresAt = createdAt.plusHours(durationHours);
         }
-        if (this.status == null) {
-            this.status = AccessRequestStatus.CREATED;
-        }
+        this.status = AccessRequestStatus.CREATED;
     }
 
     public boolean isExpired() {
         return expiresAt != null && LocalDateTime.now().isAfter(expiresAt);
     }
-
-    // getters & setters
 
     public Long getId() { return id; }
     public String getRequesterEmail() { return requesterEmail; }
