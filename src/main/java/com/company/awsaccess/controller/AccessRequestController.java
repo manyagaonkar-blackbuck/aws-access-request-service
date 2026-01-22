@@ -4,28 +4,35 @@ import com.company.awsaccess.dto.request.CreateAccessRequestDto;
 import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
 import com.company.awsaccess.service.AccessRequestService;
+import com.company.awsaccess.service.AwsCliCommandService;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/access-requests")
 public class AccessRequestController {
 
     private final AccessRequestService service;
+    private final AwsCliCommandService awsCliCommandService;
 
-    public AccessRequestController(AccessRequestService service) {
+    public AccessRequestController(
+            AccessRequestService service,
+            AwsCliCommandService awsCliCommandService) {
         this.service = service;
+        this.awsCliCommandService = awsCliCommandService;
     }
 
     @PostMapping
-    public AccessRequestResponseDto create(@RequestBody CreateAccessRequestDto dto) {
+    public AccessRequestResponseDto create(
+            @RequestBody CreateAccessRequestDto dto) {
 
-        AccessRequest saved = service.createAccessRequest(dto);
-
-        return toResponse(saved);
+        AccessRequest request = service.createAccessRequest(dto);
+        return toResponse(request);
     }
 
     @GetMapping("/{id}")
-    public AccessRequestResponseDto get(@PathVariable Long id) {
+    public AccessRequestResponseDto getById(@PathVariable Long id) {
         return toResponse(service.getById(id));
     }
 
@@ -47,6 +54,17 @@ public class AccessRequestController {
     @PostMapping("/{id}/devops/reject")
     public AccessRequestResponseDto devopsReject(@PathVariable Long id) {
         return toResponse(service.rejectByDevOps(id));
+    }
+
+    @GetMapping("/{id}/aws-cli")
+    public Map<String, String> getAwsCli(@PathVariable Long id) {
+
+        AccessRequest request = service.getById(id);
+
+        String command =
+                awsCliCommandService.generateCreatePolicyCommand(request);
+
+        return Map.of("command", command);
     }
 
     private AccessRequestResponseDto toResponse(AccessRequest request) {
