@@ -3,9 +3,10 @@ package com.company.awsaccess.controller;
 import com.company.awsaccess.dto.request.CreateAccessRequestDto;
 import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
-import com.company.awsaccess.service.AccessRequestService;
-import com.company.awsaccess.service.AwsCliCommandService;
-import com.company.awsaccess.service.IamPolicyService;
+import com.company.awsaccess.service.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -17,23 +18,25 @@ public class AccessRequestController {
     private final AccessRequestService service;
     private final IamPolicyService iamPolicyService;
     private final AwsCliCommandService awsCliCommandService;
+    private final IamPolicyExportService iamPolicyExportService;
 
     public AccessRequestController(
             AccessRequestService service,
             IamPolicyService iamPolicyService,
-            AwsCliCommandService awsCliCommandService) {
+            AwsCliCommandService awsCliCommandService,
+            IamPolicyExportService iamPolicyExportService) {
 
         this.service = service;
         this.iamPolicyService = iamPolicyService;
         this.awsCliCommandService = awsCliCommandService;
+        this.iamPolicyExportService = iamPolicyExportService;
     }
 
     @PostMapping
     public AccessRequestResponseDto create(
             @RequestBody CreateAccessRequestDto dto) {
 
-        AccessRequest saved = service.createAccessRequest(dto);
-        return toResponse(saved);
+        return toResponse(service.createAccessRequest(dto));
     }
 
     @GetMapping("/{id}")
@@ -46,19 +49,9 @@ public class AccessRequestController {
         return toResponse(service.approveByManager(id));
     }
 
-    @PostMapping("/{id}/manager/reject")
-    public AccessRequestResponseDto managerReject(@PathVariable Long id) {
-        return toResponse(service.rejectByManager(id));
-    }
-
     @PostMapping("/{id}/devops/approve")
     public AccessRequestResponseDto devopsApprove(@PathVariable Long id) {
         return toResponse(service.approveByDevOps(id));
-    }
-
-    @PostMapping("/{id}/devops/reject")
-    public AccessRequestResponseDto devopsReject(@PathVariable Long id) {
-        return toResponse(service.rejectByDevOps(id));
     }
 
     @GetMapping("/{id}/iam-policy.json")
@@ -66,6 +59,20 @@ public class AccessRequestController {
 
         AccessRequest request = service.getById(id);
         return iamPolicyService.generatePolicy(request);
+    }
+
+    @GetMapping("/{id}/iam-policy/download")
+    public ResponseEntity<String> downloadIamPolicy(@PathVariable Long id) {
+
+        AccessRequest request = service.getById(id);
+        String json =
+                iamPolicyExportService.generatePolicyJson(request);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=policy-" + id + ".json")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json);
     }
 
     @GetMapping("/{id}/aws-cli")
