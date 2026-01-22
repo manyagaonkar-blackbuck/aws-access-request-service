@@ -13,85 +13,45 @@ public class AccessRequest {
     private String requesterEmail;
     private String awsAccount;
     private String reason;
+
+    @Column(columnDefinition = "TEXT")
     private String services;
+
+    @Column(columnDefinition = "TEXT")
     private String resourceArns;
+
     private Integer durationHours;
 
     @Enumerated(EnumType.STRING)
-    private RequestStatus status = RequestStatus.CREATED;
+    private AccessRequestStatus status;
 
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
 
-    // ---------- GETTERS / SETTERS ----------
-
-    public Long getId() {
-        return id;
+    @PrePersist
+    public void init() {
+        this.createdAt = LocalDateTime.now();
+        this.status = AccessRequestStatus.CREATED;
     }
-
-    public String getRequesterEmail() {
-        return requesterEmail;
-    }
-
-    public void setRequesterEmail(String requesterEmail) {
-        this.requesterEmail = requesterEmail;
-    }
-
-    public String getAwsAccount() {
-        return awsAccount;
-    }
-
-    public void setAwsAccount(String awsAccount) {
-        this.awsAccount = awsAccount;
-    }
-
-    public String getReason() {
-        return reason;
-    }
-
-    public void setReason(String reason) {
-        this.reason = reason;
-    }
-
-    public String getServices() {
-        return services;
-    }
-
-    public void setServices(String services) {
-        this.services = services;
-    }
-
-    public String getResourceArns() {
-        return resourceArns;
-    }
-
-    public void setResourceArns(String resourceArns) {
-        this.resourceArns = resourceArns;
-    }
-
-    public Integer getDurationHours() {
-        return durationHours;
-    }
-
-    public void setDurationHours(Integer durationHours) {
-        this.durationHours = durationHours;
-    }
-
-    public RequestStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(RequestStatus status) {
-        this.status = status;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    // ---------- DOMAIN LOGIC ----------
 
     public boolean isExpired() {
-        if (durationHours == null) return false;
         return createdAt.plusHours(durationHours).isBefore(LocalDateTime.now());
     }
+
+    // getters & setters
+    public Long getId() { return id; }
+    public String getRequesterEmail() { return requesterEmail; }
+    public void setRequesterEmail(String requesterEmail) { this.requesterEmail = requesterEmail; }
+    public String getAwsAccount() { return awsAccount; }
+    public void setAwsAccount(String awsAccount) { this.awsAccount = awsAccount; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+    public String getServices() { return services; }
+    public void setServices(String services) { this.services = services; }
+    public String getResourceArns() { return resourceArns; }
+    public void setResourceArns(String resourceArns) { this.resourceArns = resourceArns; }
+    public Integer getDurationHours() { return durationHours; }
+    public void setDurationHours(Integer durationHours) { this.durationHours = durationHours; }
+    public AccessRequestStatus getStatus() { return status; }
+    public void setStatus(AccessRequestStatus status) { this.status = status; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
 }

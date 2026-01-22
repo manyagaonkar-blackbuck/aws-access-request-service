@@ -1,12 +1,10 @@
 package com.company.awsaccess.controller;
 
-import com.company.awsaccess.dto.request.CreateAccessRequestDto;
-import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
-import com.company.awsaccess.service.*;
-import org.springframework.http.*;
+import com.company.awsaccess.service.AccessRequestService;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
@@ -14,77 +12,43 @@ import java.util.Map;
 public class AccessRequestController {
 
     private final AccessRequestService service;
-    private final IamPolicyService iamPolicyService;
-    private final AwsCliCommandService awsCliCommandService;
-    private final IamPolicyExportService iamPolicyExportService;
 
-    public AccessRequestController(
-            AccessRequestService service,
-            IamPolicyService iamPolicyService,
-            AwsCliCommandService awsCliCommandService,
-            IamPolicyExportService iamPolicyExportService) {
-
+    public AccessRequestController(AccessRequestService service) {
         this.service = service;
-        this.iamPolicyService = iamPolicyService;
-        this.awsCliCommandService = awsCliCommandService;
-        this.iamPolicyExportService = iamPolicyExportService;
     }
 
     @PostMapping
-    public AccessRequestResponseDto create(@RequestBody CreateAccessRequestDto dto) {
-        return toResponse(service.createAccessRequest(dto));
-    }
+    public Map<String, Object> create(@RequestBody Map<String, Object> body) {
 
-    @GetMapping("/{id}")
-    public AccessRequestResponseDto get(@PathVariable Long id) {
-        return toResponse(service.getById(id));
-    }
+        AccessRequest request = new AccessRequest();
+        request.setRequesterEmail((String) body.get("requesterEmail"));
+        request.setAwsAccount((String) body.get("awsAccount"));
+        request.setReason((String) body.get("reason"));
+        request.setServices((String) body.get("services"));
+        request.setResourceArns((String) body.get("resourceArns"));
+        request.setDurationHours((Integer) body.get("durationHours"));
 
-    @GetMapping("/{id}/status")
-    public Map<String, String> getStatus(@PathVariable Long id) {
-        return Map.of("status", service.getById(id).getStatus().name());
+        AccessRequest saved = service.createAccessRequest(request);
+
+        return Map.of(
+                "id", saved.getId(),
+                "status", saved.getStatus().name(),
+                "createdAt", saved.getCreatedAt()
+        );
     }
 
     @PostMapping("/{id}/manager/approve")
-    public AccessRequestResponseDto managerApprove(@PathVariable Long id) {
-        return toResponse(service.approveByManager(id));
+    public AccessRequest managerApprove(@PathVariable Long id) {
+        return service.approveByManager(id);
     }
 
     @PostMapping("/{id}/devops/approve")
-    public AccessRequestResponseDto devopsApprove(@PathVariable Long id) {
-        return toResponse(service.approveByDevOps(id));
+    public AccessRequest devopsApprove(@PathVariable Long id) {
+        return service.approveByDevOps(id);
     }
 
-    @GetMapping("/{id}/iam-policy/download")
-    public ResponseEntity<String> downloadIamPolicy(@PathVariable Long id) {
-
-        AccessRequest request = service.getById(id);
-        String json = iamPolicyExportService.generatePolicyJson(request);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=policy-" + id + ".json")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(json);
-    }
-
-    @GetMapping("/{id}/aws-cli")
-    public Map<String, String> getAwsCli(@PathVariable Long id) {
-
-        AccessRequest request = service.getById(id);
-        String command =
-                awsCliCommandService.generateCreatePolicyCommand(request);
-
-        return Map.of("command", command);
-    }
-
-    private AccessRequestResponseDto toResponse(AccessRequest request) {
-        return new AccessRequestResponseDto(
-                request.getId(),
-                request.getRequesterEmail(),
-                request.getAwsAccount(),
-                request.getStatus().name(),
-                request.getCreatedAt()
-        );
+    @GetMapping("/{id}/status")
+    public Map<String, String> status(@PathVariable Long id) {
+        return Map.of("status", service.getById(id).getStatus().name());
     }
 }

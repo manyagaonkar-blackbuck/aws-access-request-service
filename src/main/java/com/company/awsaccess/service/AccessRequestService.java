@@ -1,8 +1,7 @@
 package com.company.awsaccess.service;
 
-import com.company.awsaccess.dto.request.CreateAccessRequestDto;
 import com.company.awsaccess.model.AccessRequest;
-import com.company.awsaccess.model.RequestStatus;
+import com.company.awsaccess.model.AccessRequestStatus;
 import com.company.awsaccess.repository.AccessRequestRepository;
 import org.springframework.stereotype.Service;
 
@@ -15,68 +14,63 @@ public class AccessRequestService {
         this.repository = repository;
     }
 
-    public AccessRequest createAccessRequest(CreateAccessRequestDto dto) {
-
-        AccessRequest request = new AccessRequest();
-        request.setRequesterEmail(dto.getRequesterEmail());
-        request.setAwsAccount(dto.getAwsAccount());
-        request.setReason(dto.getReason());
-        request.setServices(dto.getServices());
-        request.setResourceArns(dto.getResourceArns());
-
+    public AccessRequest createAccessRequest(AccessRequest request) {
         return repository.save(request);
     }
 
     public AccessRequest getById(Long id) {
-        return repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Request not found"));
+        AccessRequest request =
+                repository.findById(id)
+                        .orElseThrow(() -> new IllegalArgumentException("Request not found"));
+
+        if (request.isExpired()) {
+            request.setStatus(AccessRequestStatus.EXPIRED);
+            repository.save(request);
+        }
+        return request;
     }
 
     public AccessRequest approveByManager(Long id) {
-
         AccessRequest request = getById(id);
 
-        if (request.getStatus() != RequestStatus.CREATED) {
-            throw new RuntimeException("Manager approval not allowed in state: " + request.getStatus());
+        if (request.getStatus() != AccessRequestStatus.CREATED) {
+            throw new IllegalStateException("Manager approval not allowed");
         }
 
-        request.setStatus(RequestStatus.MANAGER_APPROVED);
+        request.setStatus(AccessRequestStatus.MANAGER_APPROVED);
         return repository.save(request);
     }
 
     public AccessRequest rejectByManager(Long id) {
-
         AccessRequest request = getById(id);
 
-        if (request.getStatus() != RequestStatus.CREATED) {
-            throw new RuntimeException("Manager rejection not allowed in state: " + request.getStatus());
+        if (request.getStatus() != AccessRequestStatus.CREATED) {
+            throw new IllegalStateException("Manager rejection not allowed");
         }
 
-        request.setStatus(RequestStatus.MANAGER_REJECTED);
+        request.setStatus(AccessRequestStatus.MANAGER_REJECTED);
         return repository.save(request);
     }
 
     public AccessRequest approveByDevOps(Long id) {
-
         AccessRequest request = getById(id);
 
-        if (request.getStatus() != RequestStatus.MANAGER_APPROVED) {
-            throw new RuntimeException("DevOps approval not allowed in state: " + request.getStatus());
+        if (request.getStatus() != AccessRequestStatus.MANAGER_APPROVED) {
+            throw new IllegalStateException("DevOps approval not allowed");
         }
 
-        request.setStatus(RequestStatus.DEVOPS_APPROVED);
+        request.setStatus(AccessRequestStatus.DEVOPS_APPROVED);
         return repository.save(request);
     }
 
     public AccessRequest rejectByDevOps(Long id) {
-
         AccessRequest request = getById(id);
 
-        if (request.getStatus() != RequestStatus.MANAGER_APPROVED) {
-            throw new RuntimeException("DevOps rejection not allowed in state: " + request.getStatus());
+        if (request.getStatus() != AccessRequestStatus.MANAGER_APPROVED) {
+            throw new IllegalStateException("DevOps rejection not allowed");
         }
 
-        request.setStatus(RequestStatus.DEVOPS_REJECTED);
+        request.setStatus(AccessRequestStatus.DEVOPS_REJECTED);
         return repository.save(request);
     }
 }
