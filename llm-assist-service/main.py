@@ -19,7 +19,7 @@ if not OPENAI_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-app = FastAPI(title="LLM Assist Service", version="3.3.0")
+app = FastAPI(title="LLM Assist Service", version="3.4.0")
 
 
 # -----------------------------
@@ -178,6 +178,10 @@ def make_followup(field: str, partial: Dict[str, Any]) -> dict:
         "awsAccount": "Please provide the AWS account ID (12 digits).",
         "reason": "Please provide the reason for access.",
         "services": "Please confirm which AWS service(s) you need access to.",
+        "actionGroups": (
+            "Please specify what actions you need in the service "
+            "(example for S3: READ_OBJECTS / UPLOAD_OBJECTS / DELETE_OBJECTS / LIST_BUCKET / MANAGE_BUCKET)."
+        ),
         "resourceArns": "Please provide the AWS resource ARN(s) you need access to.",
         "durationHours": "Please provide the access duration in hours.",
     }
@@ -188,8 +192,34 @@ def make_followup(field: str, partial: Dict[str, Any]) -> dict:
     }
 
 
+def is_vague_reason(reason: str) -> bool:
+    """
+    Simple heuristic:
+    If reason is too generic, we ask user to specify actionGroups first.
+    """
+    r = (reason or "").strip().lower()
+
+    vague_phrases = [
+        "need access to s3",
+        "need s3 access",
+        "need access to bucket",
+        "need access to s3 bucket",
+        "need access to s3 for project",
+        "need access for my project",
+        "need s3 permissions",
+        "need s3 permission",
+        "s3 bucket access",
+        "bucket access",
+        "project work",
+        "work on s3"
+    ]
+
+    # if any vague phrase is present -> vague
+    return any(v in r for v in vague_phrases)
+
+
 # -----------------------------
-# Endpoint: /suggest  ✅ USP output
+# Endpoint: /suggest ✅ USP output
 # -----------------------------
 @app.post("/api/v1/llm/suggest", response_model=SuggestResponse)
 def suggest(req: SuggestRequest):
@@ -234,7 +264,7 @@ Suggestion writing format (MANDATORY):
 The suggestion MUST include these sections in plain text (single string):
 1) "Intent:"
 2) "Permission scope:"
-3) "Best Practice / Safer Alternative:"
+3) "Safer Alternative:"
 4) "Notes:"
 
 You MAY include ARN examples briefly:
@@ -369,6 +399,21 @@ allowedActionGroups:
         out["services"] = services
         out["actionGroups"] = action_groups
 
+        # ✅ NEW: if reason is vague -> ask actionGroups first (before ARN)
+        if is_vague_reason(req.reason):
+            if not out.get("actionGroups") or len(out.get("actionGroups", [])) == 0:
+                partial = {
+                    "requesterEmail": req.requesterEmail,
+                    "awsAccount": req.awsAccount,
+                    "reason": req.reason,
+                    "durationHours": req.durationHours,
+                    "services": out.get("services", []),
+                    "actionGroups": out.get("actionGroups", []),
+                    "resourceArns": out.get("resourceArns", []),
+                }
+                return make_followup("actionGroups", partial)
+
+        # Existing mandatory follow-up logic
         if out.get("needFollowup") is False:
             missing = get_missing_fields(out)
             if missing:
