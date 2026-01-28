@@ -2,21 +2,30 @@ package com.company.awsaccess.controller;
 
 import com.company.awsaccess.dto.ApiResponse;
 import com.company.awsaccess.model.AccessRequest;
+import com.company.awsaccess.repository.AccessRequestRepository;
 import com.company.awsaccess.service.AccessRequestService;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/access-requests")
+@CrossOrigin(origins = "http://localhost:3000")
 public class AccessRequestController {
 
     private final AccessRequestService service;
+    private final AccessRequestRepository repository;
 
-    public AccessRequestController(AccessRequestService service) {
+    public AccessRequestController(
+            AccessRequestService service,
+            AccessRequestRepository repository
+    ) {
         this.service = service;
+        this.repository = repository;
     }
 
+    // CREATE REQUEST
     @PostMapping
     public ApiResponse<AccessRequest> create(@RequestBody Map<String, Object> body) {
 
@@ -29,6 +38,12 @@ public class AccessRequestController {
         request.setDurationHours((Integer) body.get("durationHours"));
 
         return ApiResponse.success(service.createAccessRequest(request));
+    }
+
+    // ✅ GET ALL REQUESTS (DASHBOARD)
+    @GetMapping
+    public ApiResponse<List<AccessRequest>> getAll() {
+        return ApiResponse.success(repository.findAll());
     }
 
     @PostMapping("/{id}/manager/approve")
