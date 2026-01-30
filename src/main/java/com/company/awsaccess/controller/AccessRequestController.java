@@ -1,13 +1,16 @@
 package com.company.awsaccess.controller;
 
 import com.company.awsaccess.dto.ApiResponse;
+import com.company.awsaccess.dto.mapper.AccessRequestMapper;
+import com.company.awsaccess.dto.request.CreateAccessRequestDto;
+import com.company.awsaccess.dto.response.AccessRequestResponseDto;
 import com.company.awsaccess.model.AccessRequest;
 import com.company.awsaccess.repository.AccessRequestRepository;
 import com.company.awsaccess.service.AccessRequestService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/access-requests")
@@ -25,27 +28,34 @@ public class AccessRequestController {
         this.repository = repository;
     }
 
-    // CREATE REQUEST
+    // ✅ CREATE REQUEST (DTO-BASED, CLEAN)
     @PostMapping
-    public ApiResponse<AccessRequest> create(@RequestBody Map<String, Object> body) {
-
-        AccessRequest request = new AccessRequest();
-        request.setRequesterEmail((String) body.get("requesterEmail"));
-        request.setAwsAccount((String) body.get("awsAccount"));
-        request.setReason((String) body.get("reason"));
-        request.setServices((String) body.get("services"));
-        request.setResourceArns((String) body.get("resourceArns"));
-        request.setDurationHours((Integer) body.get("durationHours"));
-
-        return ApiResponse.success(service.createAccessRequest(request));
+    public ApiResponse<AccessRequest> create(
+            @RequestBody CreateAccessRequestDto dto
+    ) {
+        return ApiResponse.success(service.create(dto));
     }
 
-    // ✅ GET ALL REQUESTS (DASHBOARD)
+    // ✅ DASHBOARD API (NO UI CHANGE)
     @GetMapping
-    public ApiResponse<List<AccessRequest>> getAll() {
-        return ApiResponse.success(repository.findAll());
+    public ApiResponse<List<AccessRequestResponseDto>> getAll() {
+
+        List<AccessRequestResponseDto> response =
+                repository.findAll()
+                        .stream()
+                        .map(AccessRequestMapper::toDto)
+                        .collect(Collectors.toList());
+
+        return ApiResponse.success(response);
     }
 
+    // STATUS
+    @GetMapping("/{id}/status")
+    public ApiResponse<String> status(@PathVariable Long id) {
+        return ApiResponse.success(service.getById(id).getStatus().name());
+    }
+
+    // MANAGER
     @PostMapping("/{id}/manager/approve")
     public ApiResponse<AccessRequest> managerApprove(@PathVariable Long id) {
         return ApiResponse.success(service.approveByManager(id));
@@ -56,6 +66,7 @@ public class AccessRequestController {
         return ApiResponse.success(service.rejectByManager(id));
     }
 
+    // DEVOPS
     @PostMapping("/{id}/devops/approve")
     public ApiResponse<AccessRequest> devopsApprove(@PathVariable Long id) {
         return ApiResponse.success(service.approveByDevOps(id));
@@ -64,10 +75,5 @@ public class AccessRequestController {
     @PostMapping("/{id}/devops/reject")
     public ApiResponse<AccessRequest> devopsReject(@PathVariable Long id) {
         return ApiResponse.success(service.rejectByDevOps(id));
-    }
-
-    @GetMapping("/{id}/status")
-    public ApiResponse<String> status(@PathVariable Long id) {
-        return ApiResponse.success(service.getById(id).getStatus().name());
     }
 }

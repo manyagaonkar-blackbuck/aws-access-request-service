@@ -8,8 +8,10 @@ public class CreateAccessRequestDto {
     private String awsAccount;
     private String reason;
 
-    // Arrays from frontend
+    // ✅ MUST BE LIST
     private List<String> services;
+
+    // ✅ MUST BE LIST
     private List<String> resourceArns;
 
     private Integer durationHours;
@@ -29,7 +31,7 @@ public class CreateAccessRequestDto {
     public void setAwsAccount(String awsAccount) {
         this.awsAccount = awsAccount;
     }
-
+ss
     public String getReason() {
         return reason;
     }

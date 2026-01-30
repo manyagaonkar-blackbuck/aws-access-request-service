@@ -1,12 +1,18 @@
 package com.company.awsaccess.service;
 
+import com.company.awsaccess.dto.request.CreateAccessRequestDto;
 import com.company.awsaccess.model.AccessRequest;
 
 import java.util.List;
 
 public interface AccessRequestService {
 
-    AccessRequest createAccessRequest(AccessRequest request);
+    // ✅ DTO-BASED CREATE (SOURCE OF TRUTH)
+    AccessRequest create(CreateAccessRequestDto dto);
+
+    List<AccessRequest> getAll();
+
+    AccessRequest getById(Long id);
 
     AccessRequest approveByManager(Long id);
 
@@ -15,9 +21,4 @@ public interface AccessRequestService {
     AccessRequest approveByDevOps(Long id);
 
     AccessRequest rejectByDevOps(Long id);
-
-    AccessRequest getById(Long id);
-
-    // ✅ ADD THIS
-    List<AccessRequest> getAll();
 }
