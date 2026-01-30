@@ -40,3 +40,4 @@ __pycache__/
 *.pyc
 .env
  o
+.DS_Store
