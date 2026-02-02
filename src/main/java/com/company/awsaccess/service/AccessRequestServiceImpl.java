@@ -6,7 +6,6 @@ import com.company.awsaccess.model.AccessRequestStatus;
 import com.company.awsaccess.repository.AccessRequestRepository;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -18,66 +17,79 @@ public class AccessRequestServiceImpl implements AccessRequestService {
         this.repository = repository;
     }
 
-    // ===== CREATE =====
     @Override
     public AccessRequest create(CreateAccessRequestDto dto) {
-        AccessRequest req = new AccessRequest();
 
-        req.setRequesterEmail(dto.getRequesterEmail());
-        req.setAwsAccount(dto.getAwsAccount());
-        req.setReason(dto.getReason());
+        // ===============================
+        // 🛠️ NULL-SAFE DEFAULTS (FIX)
+        // ===============================
+        if (dto.getServices() == null) {
+            dto.setServices(List.of());
+        }
 
-        // frontend sends LIST, DB stores STRING
-        req.setServices(String.join(",", dto.getServices()));
-        req.setResourceArns(String.join(",", dto.getResourceArns()));
+        if (dto.getResourceArns() == null) {
+            dto.setResourceArns(List.of());
+        }
 
-        req.setDurationHours(dto.getDurationHours());
-        req.setStatus(AccessRequestStatus.CREATED);
-        req.setExpiresAt(
-            LocalDateTime.now().plusHours(dto.getDurationHours())
-        );
+        if (dto.getDurationHours() == null) {
+            dto.setDurationHours(4); // default duration
+        }
 
-        return repository.save(req);
+        // ===============================
+        // CREATE ENTITY
+        // ===============================
+        AccessRequest request = new AccessRequest();
+
+        request.setRequesterEmail(dto.getRequesterEmail());
+        request.setAwsAccount(dto.getAwsAccount());
+        request.setReason(dto.getReason());
+
+        request.setServices(String.join(",", dto.getServices()));
+        request.setResourceArns(String.join(",", dto.getResourceArns()));
+        request.setDurationHours(dto.getDurationHours());
+
+        // ✅ CORRECT ENUM VALUE (FROM YOUR ENUM)
+        request.setStatus(AccessRequestStatus.CREATED);
+
+        return repository.save(request);
     }
 
-    // ===== READ =====
     @Override
     public List<AccessRequest> getAll() {
         return repository.findAll();
     }
 
     @Override
-    public AccessRequest getById(Long id) {
-        return repository.findById(id).orElseThrow();
-    }
-
-    // ===== MANAGER ACTIONS =====
-    @Override
     public AccessRequest approveByManager(Long id) {
-        AccessRequest req = repository.findById(id).orElseThrow();
-        req.setStatus(AccessRequestStatus.MANAGER_APPROVED);
-        return repository.save(req);
+        AccessRequest request = getById(id);
+        request.setStatus(AccessRequestStatus.MANAGER_APPROVED);
+        return repository.save(request);
     }
 
     @Override
     public AccessRequest rejectByManager(Long id) {
-        AccessRequest req = repository.findById(id).orElseThrow();
-        req.setStatus(AccessRequestStatus.MANAGER_REJECTED);
-        return repository.save(req);
+        AccessRequest request = getById(id);
+        request.setStatus(AccessRequestStatus.MANAGER_REJECTED);
+        return repository.save(request);
     }
 
-    // ===== DEVOPS ACTIONS =====
     @Override
     public AccessRequest approveByDevOps(Long id) {
-        AccessRequest req = repository.findById(id).orElseThrow();
-        req.setStatus(AccessRequestStatus.DEVOPS_APPROVED);
-        return repository.save(req);
+        AccessRequest request = getById(id);
+        request.setStatus(AccessRequestStatus.DEVOPS_APPROVED);
+        return repository.save(request);
     }
 
     @Override
     public AccessRequest rejectByDevOps(Long id) {
-        AccessRequest req = repository.findById(id).orElseThrow();
-        req.setStatus(AccessRequestStatus.DEVOPS_REJECTED);
-        return repository.save(req);
+        AccessRequest request = getById(id);
+        request.setStatus(AccessRequestStatus.DEVOPS_REJECTED);
+        return repository.save(request);
+    }
+
+    @Override
+    public AccessRequest getById(Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new IllegalStateException("Access request not found"));
     }
 }

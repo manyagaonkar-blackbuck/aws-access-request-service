@@ -1,7 +1,6 @@
 package com.company.awsaccess.llm.dto;
 
 import java.util.List;
-import java.util.Map;
 
 public class LlmInterpretRequest {
 
@@ -9,9 +8,10 @@ public class LlmInterpretRequest {
     private String requesterEmail;
     private String awsAccount;
     private String reason;
+    private List<String> services;
+    private List<String> actionGroups;
+    private List<String> resourceArns;
     private Integer durationHours;
-    private List<String> allowedServices;
-    private Map<String, List<String>> allowedActionGroups;
 
     public String getRequestId() {
         return requestId;
@@ -45,27 +45,35 @@ public class LlmInterpretRequest {
         this.reason = reason;
     }
 
+    public List<String> getServices() {
+        return services;
+    }
+
+    public void setServices(List<String> services) {
+        this.services = services;
+    }
+
+    public List<String> getActionGroups() {
+        return actionGroups;
+    }
+
+    public void setActionGroups(List<String> actionGroups) {
+        this.actionGroups = actionGroups;
+    }
+
+    public List<String> getResourceArns() {
+        return resourceArns;
+    }
+
+    public void setResourceArns(List<String> resourceArns) {
+        this.resourceArns = resourceArns;
+    }
+
     public Integer getDurationHours() {
         return durationHours;
     }
 
     public void setDurationHours(Integer durationHours) {
         this.durationHours = durationHours;
-    }
-
-    public List<String> getAllowedServices() {
-        return allowedServices;
-    }
-
-    public void setAllowedServices(List<String> allowedServices) {
-        this.allowedServices = allowedServices;
-    }
-
-    public Map<String, List<String>> getAllowedActionGroups() {
-        return allowedActionGroups;
-    }
-
-    public void setAllowedActionGroups(Map<String, List<String>> allowedActionGroups) {
-        this.allowedActionGroups = allowedActionGroups;
     }
 }

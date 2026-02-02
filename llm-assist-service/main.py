@@ -29,16 +29,20 @@ app = FastAPI(title="LLM Assist Service", version="4.3.3")
 
 
 # --------------------------------------------------
-# Models
+# Models (compat: accept both shapes)
 # --------------------------------------------------
 class InterpretRequest(BaseModel):
     requestId: str
     requesterEmail: Optional[str] = None
     awsAccount: Optional[str] = None
-    reason: str
-    services: List[str]
-    actionGroups: List[str]
-    resourceArns: List[str]
+    reason: Optional[str] = ""
+    # Python shape (optional)
+    services: Optional[List[str]] = None
+    actionGroups: Optional[List[str]] = None
+    # Java shape (optional)
+    allowedServices: Optional[List[str]] = None
+    allowedActionGroups: Optional[Dict[str, List[str]]] = None
+    resourceArns: Optional[List[str]] = None
     durationHours: Optional[int] = None
 
 
@@ -168,19 +172,37 @@ def is_complete(partial: Dict[str, Any]) -> bool:
 # --------------------------------------------------
 @app.post("/api/v1/llm/interpret", response_model=InterpretResponse)
 def interpret(req: InterpretRequest):
+    # Normalize incoming shape: prefer service fields if present, otherwise use allowed*
+    services = req.services or req.allowedServices or []
+    action_groups = req.actionGroups or []
+    
+    # try allowedActionGroups -> list of group names (flatten keys) if provided
+    if not action_groups and req.allowedActionGroups:
+        try:
+            # flatten values
+            flattened = []
+            for k, v in req.allowedActionGroups.items():
+                if isinstance(v, list):
+                    flattened.extend(v)
+            if flattened:
+                action_groups = flattened
+            else:
+                action_groups = list(req.allowedActionGroups.keys())
+        except Exception:
+            action_groups = list(req.allowedActionGroups.keys())
 
     context = f"""
 Reason:
 {req.reason}
 
 Services:
-{req.services}
+{services}
 
 Actions:
-{req.actionGroups}
+{action_groups}
 
 Resources:
-{req.resourceArns}
+{req.resourceArns or []}
 
 Duration:
 {req.durationHours}
@@ -188,10 +210,21 @@ Duration:
 
     question = ask_llm_followup(context)
 
+    partial = {
+        "requestId": req.requestId,
+        "requesterEmail": req.requesterEmail,
+        "awsAccount": req.awsAccount,
+        "reason": req.reason,
+        "services": services,
+        "actionGroups": action_groups,
+        "resourceArns": req.resourceArns or [],
+        "durationHours": req.durationHours,
+    }
+
     return InterpretResponse(
         needFollowup=True,
         followupQuestion=FollowupQuestion(question=question),
-        partialData=req.dict(),
+        partialData=partial,
     )
 
 
