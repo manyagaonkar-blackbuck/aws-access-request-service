@@ -11,7 +11,8 @@ public class AccessRequestMapper {
                 req.getRequesterEmail(),
                 req.getAwsAccount(),
                 req.getStatus().name(),
-                req.getCreatedAt()
+                req.getCreatedAt(),
+                req.getServices()
         );
     }
 }

@@ -9,19 +9,22 @@ public class AccessRequestResponseDto {
     private String awsAccount;
     private String status;
     private LocalDateTime createdAt;
+    private String services;
 
     public AccessRequestResponseDto(
             Long id,
             String requesterEmail,
             String awsAccount,
             String status,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            String services
     ) {
         this.id = id;
         this.requesterEmail = requesterEmail;
         this.awsAccount = awsAccount;
         this.status = status;
         this.createdAt = createdAt;
+        this.services = services;
     }
 
     public Long getId() {
@@ -42,5 +45,9 @@ public class AccessRequestResponseDto {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public String getServices() {
+        return services;
     }
 }
