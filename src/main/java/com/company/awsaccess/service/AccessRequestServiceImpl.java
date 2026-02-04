@@ -1,104 +1,65 @@
 package com.company.awsaccess.service;
+import com.company.awsaccess.model.AccessRequestStatus;
 
 import com.company.awsaccess.dto.request.CreateAccessRequestDto;
+import com.company.awsaccess.llm.client.LlmClient;
+import com.company.awsaccess.llm.dto.LlmInterpretRequest;
+import com.company.awsaccess.llm.dto.LlmInterpretResponse;
 import com.company.awsaccess.model.AccessRequest;
-import com.company.awsaccess.model.AccessRequestStatus;
 import com.company.awsaccess.repository.AccessRequestRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class AccessRequestServiceImpl implements AccessRequestService {
 
-    private final AccessRequestRepository repository;
-    private final WebClient webClient;
+    @Autowired
+    private AccessRequestRepository repository;
 
-    public AccessRequestServiceImpl(
-            AccessRequestRepository repository,
-            WebClient webClient
-    ) {
-        this.repository = repository;
-        this.webClient = webClient;
-    }
+    @Autowired
+    private LlmClient llmClient;
 
+    // ✅ REQUIRED BY INTERFACE
     @Override
     public AccessRequest create(CreateAccessRequestDto dto) {
 
-        // ===============================
-        // 🔗 CALL LLM (SAFE)
-        // ===============================
-        try {
-            Map<String, Object> llmResponse =
-                    webClient.post()
-                            .uri("http://localhost:9000/api/v1/llm/interpret")
-                            .bodyValue(Map.of(
-                                    "requesterEmail", dto.getRequesterEmail(),
-                                    "awsAccount", dto.getAwsAccount(),
-                                    "reason", dto.getReason()
-                            ))
-                            .retrieve()
-                            .bodyToMono(Map.class)
-                            .block();
+        // DTO → Entity
+        AccessRequest req = new AccessRequest();
+        req.setRequesterEmail(dto.getRequesterEmail());
+        req.setAwsAccount(dto.getAwsAccount());
+        req.setReason(dto.getReason());
 
-            if (llmResponse != null) {
-                if (dto.getServices() == null) {
-                    dto.setServices((List<String>) llmResponse.get("services"));
-                }
+        // LLM request
+        LlmInterpretRequest llmReq = new LlmInterpretRequest();
+        llmReq.setRequesterEmail(req.getRequesterEmail());
+        llmReq.setAwsAccount(req.getAwsAccount());
+        llmReq.setReason(req.getReason());
 
-                if (dto.getResourceArns() == null) {
-                    dto.setResourceArns((List<String>) llmResponse.get("resourceArns"));
-                }
+        // Call LLM
+        LlmInterpretResponse llmResp = llmClient.interpret(llmReq);
 
-                if (dto.getDurationHours() == null) {
-                    Object duration = llmResponse.get("durationHours");
-                    if (duration instanceof Integer) {
-                        dto.setDurationHours((Integer) duration);
-                    }
-                }
-
-                System.out.println("LLM RESPONSE: " + llmResponse);
-            }
-
-        } catch (Exception e) {
-            // 🚨 LLM FAILURE SHOULD NEVER BREAK BACKEND
-            System.out.println("LLM call failed, using defaults");
+        if (Boolean.TRUE.equals(llmResp.getNeedFollowup())) {
+            req.setStatus(AccessRequestStatus.CREATED);
+            return repository.save(req);
         }
 
-        // ===============================
-        // 🛠️ FALLBACK DEFAULTS
-        // ===============================
-        if (dto.getServices() == null) {
-            dto.setServices(List.of());
+        if (llmResp.getServices() != null) {
+            req.setServices(String.join(",", llmResp.getServices()));
         }
 
-        if (dto.getResourceArns() == null) {
-            dto.setResourceArns(List.of());
+        if (llmResp.getResourceArns() != null) {
+            req.setResourceArns(String.join(",", llmResp.getResourceArns()));
         }
 
-        if (dto.getDurationHours() == null) {
-            dto.setDurationHours(4);
-        }
+        req.setDurationHours(llmResp.getDurationHours());
+        req.setStatus(AccessRequestStatus.CREATED);
 
-        // ===============================
-        // CREATE ENTITY
-        // ===============================
-        AccessRequest request = new AccessRequest();
-
-        request.setRequesterEmail(dto.getRequesterEmail());
-        request.setAwsAccount(dto.getAwsAccount());
-        request.setReason(dto.getReason());
-
-        request.setServices(String.join(",", dto.getServices()));
-        request.setResourceArns(String.join(",", dto.getResourceArns()));
-        request.setDurationHours(dto.getDurationHours());
-
-        request.setStatus(AccessRequestStatus.CREATED);
-
-        return repository.save(request);
+        return repository.save(req);
     }
+
+    // ---- STUB METHODS (required by interface) ----
 
     @Override
     public List<AccessRequest> getAll() {
@@ -106,36 +67,27 @@ public class AccessRequestServiceImpl implements AccessRequestService {
     }
 
     @Override
+    public AccessRequest getById(Long id) {
+        return repository.findById(id).orElseThrow();
+    }
+
+    @Override
     public AccessRequest approveByManager(Long id) {
-        AccessRequest request = getById(id);
-        request.setStatus(AccessRequestStatus.MANAGER_APPROVED);
-        return repository.save(request);
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     @Override
     public AccessRequest rejectByManager(Long id) {
-        AccessRequest request = getById(id);
-        request.setStatus(AccessRequestStatus.MANAGER_REJECTED);
-        return repository.save(request);
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     @Override
     public AccessRequest approveByDevOps(Long id) {
-        AccessRequest request = getById(id);
-        request.setStatus(AccessRequestStatus.DEVOPS_APPROVED);
-        return repository.save(request);
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     @Override
     public AccessRequest rejectByDevOps(Long id) {
-        AccessRequest request = getById(id);
-        request.setStatus(AccessRequestStatus.DEVOPS_REJECTED);
-        return repository.save(request);
-    }
-
-    @Override
-    public AccessRequest getById(Long id) {
-        return repository.findById(id)
-                .orElseThrow(() -> new IllegalStateException("Access request not found"));
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 }
